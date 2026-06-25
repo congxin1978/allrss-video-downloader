@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>allrss 视频下载器</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #0f1117;
+    color: #e2e8f0;
+    min-height: 100vh;
+    padding: 24px 16px;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; }
+
+  h1 { font-size: 22px; font-weight: 600; color: #f8fafc; margin-bottom: 4px; }
+  .sub { font-size: 13px; color: #64748b; margin-bottom: 28px; }
+
+  .card {
+    background: #1e2330;
+    border: 1px solid #2d3447;
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 16px;
+  }
+  .card-title {
+    font-size: 13px; font-weight: 600; color: #94a3b8;
+    text-transform: uppercase; letter-spacing: .05em;
+    margin-bottom: 14px;
+  }
+
+  /* Channel grid */
+  #channel-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 8px;
+  }
+  .ch-item {
+    display: flex; align-items: center; gap: 8px;
+    background: #252b3b; border: 1px solid #2d3447;
+    border-radius: 8px; padding: 10px 12px;
+    cursor: pointer; transition: border-color .15s, background .15s;
+    user-select: none;
+  }
+  .ch-item:hover { border-color: #4f6ef7; background: #2a3150; }
+  .ch-item input[type=checkbox] { width: 15px; height: 15px; accent-color: #4f6ef7; flex-shrink: 0; }
+  .ch-item label { font-size: 13px; cursor: pointer; color: #cbd5e1; }
+  .ch-item.checked { border-color: #4f6ef7; background: #1e2a50; }
+  .ch-item.checked label { color: #a5b4fc; }
+
+  .loading-channels { color: #64748b; font-size: 13px; padding: 8px 0; }
+
+  /* Controls row */
+  .controls { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field label { font-size: 12px; color: #64748b; }
+  .field input[type=text],
+  .field input[type=number] {
+    background: #252b3b; border: 1px solid #2d3447;
+    border-radius: 8px; padding: 8px 12px;
+    color: #e2e8f0; font-size: 13px; outline: none;
+    transition: border-color .15s;
+  }
+  .field input:focus { border-color: #4f6ef7; }
+  .field-wide input { width: 320px; }
+  .field-narrow input { width: 100px; }
+
+  .btn {
+    padding: 9px 22px; border-radius: 8px; border: none;
+    font-size: 14px; font-weight: 600; cursor: pointer;
+    transition: opacity .15s, transform .1s;
+  }
+  .btn:active { transform: scale(.97); }
+  .btn-primary { background: #4f6ef7; color: #fff; }
+  .btn-primary:hover { opacity: .9; }
+  .btn-primary:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+  .btn-secondary { background: #252b3b; color: #94a3b8; border: 1px solid #2d3447; }
+
+  .select-row {
+    display: flex; gap: 8px; margin-bottom: 12px;
+  }
+  .select-row button {
+    font-size: 12px; padding: 4px 10px; border-radius: 6px;
+    border: 1px solid #2d3447; background: #252b3b;
+    color: #94a3b8; cursor: pointer;
+  }
+  .select-row button:hover { color: #e2e8f0; border-color: #4f6ef7; }
+
+  /* Log */
+  #log {
+    background: #0d1117; border-radius: 8px; padding: 14px 16px;
+    font-family: "SF Mono", "Fira Code", monospace; font-size: 12.5px;
+    line-height: 1.7; max-height: 380px; overflow-y: auto;
+    color: #8b9bb4; white-space: pre-wrap; word-break: break-all;
+    min-height: 60px;
+  }
+  .log-channel { color: #a5b4fc; font-weight: 600; }
+  .log-ok      { color: #34d399; }
+  .log-error   { color: #f87171; }
+  .log-warn    { color: #fbbf24; }
+  .log-dl      { color: #93c5fd; }
+  .log-done    { color: #34d399; font-weight: 600; }
+  .log-info    { color: #94a3b8; }
+
+  .status-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; padding: 4px 10px; border-radius: 20px;
+    margin-left: 12px; vertical-align: middle;
+  }
+  .badge-running { background: #1a3a2a; color: #34d399; border: 1px solid #065f46; }
+  .badge-idle    { background: #1e2330; color: #64748b;  border: 1px solid #2d3447; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; }
+  .dot-green { background: #34d399; animation: pulse 1.2s infinite; }
+  .dot-gray  { background: #475569; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>
+    allrss 视频下载器
+    <span id="status-badge" class="status-badge badge-idle">
+      <span id="dot" class="dot dot-gray"></span>
+      <span id="status-text">空闲</span>
+    </span>
+  </h1>
+  <p class="sub">从 allrss.se 下载亚洲剧集 / 动漫 / 美剧等视频</p>
+
+  <!-- 频道选择 -->
+  <div class="card">
+    <div class="card-title">选择频道</div>
+    <div class="select-row">
+      <button onclick="selectAll()">全选</button>
+      <button onclick="clearAll()">清空</button>
+    </div>
+    <div id="channel-grid">
+      <div class="loading-channels">正在加载频道列表…</div>
+    </div>
+  </div>
+
+  <!-- 选项 -->
+  <div class="card">
+    <div class="card-title">下载选项</div>
+    <div class="controls">
+      <div class="field field-wide">
+        <label>保存目录</label>
+        <input type="text" id="out-dir" value="{{ default_out }}" placeholder="/path/to/downloads">
+      </div>
+      <div class="field field-narrow">
+        <label>每频道最多集数（0=不限）</label>
+        <input type="number" id="max-eps" value="0" min="0" max="999">
+      </div>
+      <div class="field" style="justify-content:flex-end">
+        <button class="btn btn-primary" id="dl-btn" onclick="startDownload()">
+          ▶ 开始下载
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 日志 -->
+  <div class="card">
+    <div class="card-title" style="display:flex;justify-content:space-between">
+      <span>下载日志</span>
+      <button class="btn-secondary" style="font-size:12px;padding:3px 10px;border-radius:6px;border:1px solid #2d3447;background:#1e2330;color:#64748b;cursor:pointer" onclick="clearLog()">清空</button>
+    </div>
+    <div id="log">等待开始…</div>
+  </div>
+
+</div>
+
+<script>
+let channelData = [];
+
+// ── 加载频道 ──────────────────────────────
+async function loadChannels() {
+  const grid = document.getElementById('channel-grid');
+  try {
+    const res = await fetch('/api/channels');
+    channelData = await res.json();
+    grid.innerHTML = '';
+    channelData.forEach((ch, i) => {
+      const div = document.createElement('div');
+      div.className = 'ch-item';
+      div.dataset.idx = i;
+      div.innerHTML = `
+        <input type="checkbox" id="ch${i}" onchange="toggleCheck(${i})">
+        <label for="ch${i}">${ch.title}</label>`;
+      div.addEventListener('click', e => {
+        if (e.target.tagName !== 'INPUT') {
+          const cb = div.querySelector('input');
+          cb.checked = !cb.checked;
+          toggleCheck(i);
+        }
+      });
+      grid.appendChild(div);
+    });
+  } catch(e) {
+    grid.innerHTML = '<div class="loading-channels">⚠ 加载失败，请检查网络</div>';
+  }
+}
+
+function toggleCheck(i) {
+  const item = document.querySelector(`.ch-item[data-idx="${i}"]`);
+  const cb = item.querySelector('input');
+  item.classList.toggle('checked', cb.checked);
+}
+
+function selectAll() {
+  document.querySelectorAll('.ch-item').forEach((item, i) => {
+    item.querySelector('input').checked = true;
+    item.classList.add('checked');
+  });
+}
+
+function clearAll() {
+  document.querySelectorAll('.ch-item').forEach(item => {
+    item.querySelector('input').checked = false;
+    item.classList.remove('checked');
+  });
+}
+
+// ── 日志 ──────────────────────────────────
+const logEl = document.getElementById('log');
+function appendLog(msg, cls) {
+  const span = document.createElement('span');
+  span.className = cls || '';
+  span.textContent = msg + '\n';
+  if (logEl.textContent === '等待开始…') logEl.textContent = '';
+  logEl.appendChild(span);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+function clearLog() { logEl.textContent = ''; }
+
+// ── 状态 ──────────────────────────────────
+function setRunning(on) {
+  const badge = document.getElementById('status-badge');
+  const dot   = document.getElementById('dot');
+  const txt   = document.getElementById('status-text');
+  const btn   = document.getElementById('dl-btn');
+  if (on) {
+    badge.className = 'status-badge badge-running';
+    dot.className   = 'dot dot-green';
+    txt.textContent = '下载中…';
+    btn.disabled = true;
+    btn.textContent = '⏳ 下载中…';
+  } else {
+    badge.className = 'status-badge badge-idle';
+    dot.className   = 'dot dot-gray';
+    txt.textContent = '空闲';
+    btn.disabled = false;
+    btn.textContent = '▶ 开始下载';
+  }
+}
+
+// ── SSE 实时日志 ──────────────────────────
+function listenLogs() {
+  const es = new EventSource('/api/logs');
+  es.onmessage = e => {
+    const d = JSON.parse(e.data);
+    if (d.type === 'ping') return;
+    if (d.msg === '__DONE__') { es.close(); setRunning(false); return; }
+    const cls = {
+      channel:'log-channel', ok:'log-ok', error:'log-error',
+      warn:'log-warn', dl:'log-dl', done:'log-done'
+    }[d.type] || 'log-info';
+    appendLog(d.msg, cls);
+  };
+  es.onerror = () => es.close();
+}
+
+// ── 开始下载 ──────────────────────────────
+async function startDownload() {
+  const selected = [];
+  document.querySelectorAll('.ch-item input:checked').forEach(cb => {
+    const i = parseInt(cb.closest('.ch-item').dataset.idx);
+    selected.push(channelData[i]);
+  });
+
+  if (!selected.length) {
+    alert('请先选择至少一个频道');
+    return;
+  }
+
+  const max = parseInt(document.getElementById('max-eps').value) || 0;
+  const out = document.getElementById('out-dir').value.trim();
+
+  clearLog();
+  setRunning(true);
+  listenLogs();
+
+  const res = await fetch('/api/download', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ channels: selected, max, out })
+  });
+  const d = await res.json();
+  if (d.error) {
+    appendLog('⚠ ' + d.error, 'log-warn');
+    setRunning(false);
+  }
+}
+
+// ── 初始化 ────────────────────────────────
+loadChannels();
+// 恢复运行状态（刷新页面时）
+fetch('/api/status').then(r=>r.json()).then(d => { if(d.running) { setRunning(true); listenLogs(); } });
+</script>
+</body>
+</html>
