@@ -354,9 +354,9 @@ class App(ctk.CTk):
         self.after(0, lambda: self._show_episodes(eps))
 
     def _show_episodes(self, episodes):
-        self.episodes = episodes
         self.ep_vars  = []
         self._clear_mid(None)
+        self.episodes = episodes   # ← 必须在 _clear_mid 之后赋值！
         if not episodes:
             ctk.CTkLabel(self.mid_scroll,
                          text="⚠ 暂无可下载的集数",
