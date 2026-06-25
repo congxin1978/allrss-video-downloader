@@ -47,42 +47,70 @@ def get_channels():
             result.append({"title": e.get("title",""), "url": url})
     return result
 
-def _extract_video_url(entry):
-    """提取真正的视频 URL，明确跳过 RSS/XML 链接"""
-    VIDEO_EXTS = (".m3u8", ".mp4", ".mkv", ".ts", ".avi", ".flv", ".wmv", ".mov")
-    SKIP_TYPES = ("application/rss+xml", "text/xml", "application/xml",
-                  "application/atom+xml")
-    SKIP_EXTS  = (".xml", ".rss", ".atom")
+# 图片/缩略图特征，用于过滤
+_IMAGE_SKIP = ("timthumb", ".jpg", ".jpeg", ".png", ".gif",
+               ".webp", ".bmp", ".svg", "image/", "/thumb",
+               "/poster", "/cover", "thumbnail")
+_VIDEO_EXTS = (".m3u8", ".mp4", ".mkv", ".ts", ".avi",
+               ".flv", ".wmv", ".mov", ".webm", ".3gp")
+_SKIP_MIME  = ("rss", "xml", "html", "text/plain", "image/")
 
+def _is_image_url(url):
+    u = url.lower()
+    return any(p in u for p in _IMAGE_SKIP)
+
+def _extract_video_url(entry):
+    """
+    三步提取视频 URL：
+    1. enclosures/links 里找直接视频链接（过滤图片）
+    2. HTML 内容里找 source src / href（不搜 img src）
+    3. 都没有时用 entry.link 让 yt-dlp 自己从页面提取
+    """
     all_links = list(entry.get("links", [])) + list(entry.get("enclosures", []))
+
+    # ── 步骤 1：enclosures / links ─────────────────────
     for link in all_links:
         href = (link.get("href") or link.get("url") or "").strip()
         mime = link.get("type", "").lower()
-        if not href: continue
-        if mime in SKIP_TYPES: continue
-        if any(href.lower().endswith(x) for x in SKIP_EXTS): continue
-        if any(href.lower().endswith(x) for x in VIDEO_EXTS): return href
-        if "video" in mime or "mpegurl" in mime or "octet" in mime: return href
+        if not href or _is_image_url(href): continue
+        if any(t in mime for t in _SKIP_MIME): continue
+        if any(href.lower().endswith(x) for x in _VIDEO_EXTS):
+            log.debug("video_url from ext: %s", href[:100]); return href
+        if "video" in mime or "mpegurl" in mime or "octet" in mime:
+            log.debug("video_url from mime: %s", href[:100]); return href
 
-    # HTML 内容里找
+    # ── 步骤 2：HTML 里找 source src / href（不抓 img src）──
     raw = entry.get("summary","") + "".join(
         c.get("value","") for c in entry.get("content",[]))
-    for kw in ['file="',"file='", 'src="',"src='",
-               'url="',"url='", 'source src="',"source src='"]:
-        idx = content_find(raw, kw)
-        if idx == -1: continue
-        start = idx + len(kw)
-        q = kw[-1]
-        end = raw.find(q, start)
-        if end > start:
-            u = raw[start:end].strip()
-            if (u.startswith("http") and
-                    not any(u.lower().endswith(x) for x in SKIP_EXTS)):
-                return u
-    return None
 
-def content_find(text, kw):
-    return text.find(kw)
+    # 仅搜视频相关属性，明确跳过 <img src=
+    for kw in ['source src="', "source src='",
+               'file="', "file='",
+               'href="', "href='"]:
+        pos = 0
+        while True:
+            idx = raw.find(kw, pos)
+            if idx == -1: break
+            start = idx + len(kw)
+            q = kw[-1]
+            end = raw.find(q, start)
+            if end > start:
+                u = raw[start:end].strip()
+                if (u.startswith("http")
+                        and not u.lower().endswith((".xml",".rss",".atom"))
+                        and not _is_image_url(u)):
+                    log.debug("video_url from HTML(%s): %s", kw.strip(), u[:100])
+                    return u
+            pos = start
+
+    # ── 步骤 3：fallback → entry.link 给 yt-dlp 从页面解析 ──
+    page = (entry.get("link") or entry.get("id","")).strip()
+    if page and page.startswith("http") and not _is_image_url(page):
+        log.debug("video_url fallback to page: %s", page[:100])
+        return page
+
+    log.warning("video_url: 未找到任何候选 URL，entry title=%s", entry.get("title","?"))
+    return None
 
 def _extract_sub_rss(entry):
     all_links = list(entry.get("links",[])) + list(entry.get("enclosures",[]))
