@@ -1,12 +1,24 @@
 """
-allrss 视频下载器 v4
-修复：下载无反应 / 增加详细日志 / 错误不再静默
+allrss 视频下载器 v5
+修复：BooleanVar / 加载卡住 / 下载无反应
 """
-import queue, threading, time
+import queue, threading, time, logging, sys
 from pathlib import Path
 from tkinter import filedialog, messagebox
+import tkinter as tk
 import customtkinter as ctk
 import feedparser, requests, yt_dlp
+
+# ── 日志文件（exe 同目录下的 allrss_debug.log）──────────────
+_log_path = (Path(sys.executable).parent / "allrss_debug.log"
+             if getattr(sys, "frozen", False)
+             else Path("allrss_debug.log"))
+logging.basicConfig(
+    filename=str(_log_path), level=logging.DEBUG,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    encoding="utf-8", force=True)
+log = logging.getLogger("allrss")
+log.info("=== 启动 === Python %s", sys.version.split()[0])
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
@@ -352,7 +364,7 @@ class App(ctk.CTk):
             self._log("  ⚠ 暂无视频链接\n")
             return
         for ep in episodes:
-            var     = ctk.BooleanVar(value=False)
+            var     = tk.BooleanVar(value=False)
             has_url = bool(ep.get("url"))
             cb = ctk.CTkCheckBox(
                 self.mid_scroll, text=ep["title"], variable=var,
@@ -362,6 +374,8 @@ class App(ctk.CTk):
             cb.pack(anchor="w", padx=10, pady=3, fill="x")
             self.ep_vars.append(var)
         avail = sum(1 for ep in episodes if ep.get("url"))
+        log.info("_show_episodes: %d 集，%d 可下载，ep_vars 长度=%d",
+                 len(episodes), avail, len(self.ep_vars))
         self._log(f"  ✓ 共 {len(episodes)} 集，{avail} 集可下载\n")
 
     def _go_back(self):
@@ -399,14 +413,19 @@ class App(ctk.CTk):
             return
 
         # 收集勾选的集数
+        log.info("_start_download: ep_vars=%d, episodes=%d",
+                 len(self.ep_vars), len(self.episodes))
         selected = []
         for i, var in enumerate(self.ep_vars):
             try:
-                if var.get():
+                val = var.get()
+                log.debug("  ep_vars[%d] get()=%s  type=%s", i, val, type(var).__name__)
+                if val:
                     selected.append(self.episodes[i])
-            except Exception:
-                pass
+            except Exception as ex:
+                log.error("  ep_vars[%d] 读取失败: %s", i, ex)
 
+        log.info("选中集数: %d", len(selected))
         if not selected:
             messagebox.showwarning("提示", "请勾选要下载的集数（打勾）")
             return
