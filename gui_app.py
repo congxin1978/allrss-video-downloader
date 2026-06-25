@@ -132,18 +132,45 @@ def get_shows(channel_url):
     return shows
 
 def get_episodes(show):
+    """第二层 film=XXXX → episode 列表，每集存 ep_rss 链接"""
     if show.get("sub_rss"):
         feed = fetch_rss(show["sub_rss"])
         if feed and feed.entries:
             eps = []
             for e in feed.entries:
-                url = _extract_video_url(e)
-                eps.append({"title": e.get("title","unknown"), "url": url})
-            if any(ep["url"] for ep in eps):
+                title = e.get("title","unknown")
+                ep_rss = None
+                for lk in list(e.get("links",[])) + list(e.get("enclosures",[])):
+                    href = (lk.get("href") or lk.get("url","")).strip()
+                    if href and "episodes=" in href:
+                        ep_rss = href; break
+                eps.append({"title": title, "ep_rss": ep_rss, "url": None})
+            if any(ep["ep_rss"] for ep in eps):
                 return eps
     if show.get("direct_url"):
-        return [{"title": show["title"], "url": show["direct_url"]}]
+        return [{"title": show["title"], "ep_rss": None, "url": show["direct_url"]}]
     return []
+
+
+def resolve_episode_url(ep):
+    """第三层 episodes=YYYYY RSS → 真实视频 URL"""
+    if ep.get("url"):
+        return ep["url"]
+    ep_rss = ep.get("ep_rss")
+    if not ep_rss:
+        return None
+    log.debug("resolve: %s", ep_rss[:100])
+    feed = fetch_rss(ep_rss)
+    if not feed or not feed.entries:
+        log.warning("resolve: RSS 空 %s", ep_rss); return None
+    for entry in feed.entries:
+        log.debug("  ep entry: %s | links=%d | sum=%s",
+                  entry.get("title","?"), len(entry.get("links",[])),
+                  entry.get("summary","")[:150])
+        url = _extract_video_url(entry)
+        if url:
+            log.debug("  → %s", url[:100]); return url
+    log.warning("resolve: 未找到视频 %s", ep_rss); return None
 
 def download_video(url, save_path, log_fn):
     """下载单个视频，输出详细日志"""
@@ -391,7 +418,7 @@ class App(ctk.CTk):
             return
         for ep in episodes:
             var     = tk.BooleanVar(value=False)
-            has_url = bool(ep.get("url"))
+            has_url = bool(ep.get("url") or ep.get("ep_rss"))
             cb = ctk.CTkCheckBox(
                 self.mid_scroll, text=ep["title"], variable=var,
                 font=ctk.CTkFont(size=12),
@@ -481,17 +508,17 @@ class App(ctk.CTk):
 
         def run():
             for ep in ep_list:
-                url   = ep.get("url")
-                title = ep.get("title", "unknown")
+                title = ep.get("title","unknown")
+                self.log_q.put(f"\n  ▶ {title[:50]}\n")
+                self.log_q.put("    获取视频链接…\n")
+                url = resolve_episode_url(ep)
                 if not url:
-                    self.log_q.put(f"  跳过（无链接）：{title[:40]}\n")
-                    continue
+                    self.log_q.put("  ✗ 无法获取视频链接\n"); continue
                 safe_t = "".join(c for c in title
                                  if c not in r'\/:*?"<>|').strip()[:60]
                 out_path = str(save_dir / f"{safe_t}.%(ext)s")
-                self.log_q.put(f"\n  ▶ {title[:50]}\n")
                 ok = download_video(url, out_path, self.log_q.put)
-                self.log_q.put("  ✓ 完成\n" if ok else "  ✗ 此集下载失败\n")
+                self.log_q.put("  ✓ 完成\n" if ok else "  ✗ 下载失败\n")
                 time.sleep(0.5)
 
             self.log_q.put(f"\n✅ 完成！文件在：{save_dir.resolve()}\n")
