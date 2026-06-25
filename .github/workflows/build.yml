@@ -1,0 +1,100 @@
+name: 构建桌面 APP
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+
+  # ── Mac 版 ──────────────────────────────────────────
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 安装依赖
+        run: |
+          pip install pyinstaller customtkinter feedparser requests yt-dlp
+
+      - name: 打包 APP
+        run: |
+          pyinstaller \
+            --onefile \
+            --windowed \
+            --name "allrss下载器" \
+            --collect-all customtkinter \
+            --collect-all yt_dlp \
+            gui_app.py
+
+      - name: 压缩
+        run: |
+          cd dist
+          zip -r allrss-Mac.zip "allrss下载器.app"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-app
+          path: dist/allrss-Mac.zip
+
+  # ── Windows 版 ──────────────────────────────────────
+  build-win:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 安装依赖
+        run: |
+          pip install pyinstaller customtkinter feedparser requests yt-dlp
+
+      - name: 打包 EXE
+        run: |
+          pyinstaller `
+            --onefile `
+            --windowed `
+            --name "allrss下载器" `
+            --collect-all customtkinter `
+            --collect-all yt_dlp `
+            gui_app.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: win-app
+          path: dist/allrss下载器.exe
+
+  # ── 发布 Release ────────────────────────────────────
+  release:
+    needs: [build-mac, build-win]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+
+      - name: 发布到 Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "v1.0.${{ github.run_number }}"
+          name: "allrss 下载器"
+          body: |
+            ## 下载说明
+
+            | 系统 | 文件 |
+            |------|------|
+            | Mac  | `allrss-Mac.zip` → 解压后双击 .app |
+            | Windows | `allrss下载器.exe` → 直接双击 |
+
+            > Mac 首次打开：右键 → 打开（绕过安全提示）
+          files: |
+            mac-app/allrss-Mac.zip
+            win-app/allrss下载器.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
