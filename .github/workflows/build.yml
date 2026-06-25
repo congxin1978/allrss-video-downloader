@@ -7,7 +7,6 @@ on:
 
 jobs:
 
-  # ── Mac 版 ──────────────────────────────────────────
   build-mac:
     runs-on: macos-latest
     steps:
@@ -18,8 +17,52 @@ jobs:
           python-version: "3.11"
 
       - name: 安装依赖
+        run: pip install pyinstaller customtkinter feedparser requests yt-dlp pillow
+
+      - name: 生成图标 (.icns)
         run: |
-          pip install pyinstaller customtkinter feedparser requests yt-dlp
+          python3 << 'PYEOF'
+          from PIL import Image
+          import os, struct, zlib
+
+          def make_icon(size=512):
+              from PIL import Image, ImageDraw
+              S = size
+              img = Image.new("RGBA", (S, S), (0,0,0,0))
+              d   = ImageDraw.Draw(img)
+              pad, r = int(S*.04), int(S*.22)
+              d.rounded_rectangle([pad,pad,S-pad,S-pad], radius=r, fill=(18,24,42))
+              cx, cy = S//2, S//2
+              for i in range(18,0,-1):
+                  fr = i/18
+                  ring  = int(S*.36)
+                  inner = ring - int(S*.055)
+                  rc=int(60+(79-60)*(1-fr)); gc=int(80+(130-80)*(1-fr)); bc=int(220+(247-220)*(1-fr))
+                  d.ellipse([cx-ring,cy-ring,cx+ring,cy+ring], fill=(rc,gc,bc,255))
+                  d.ellipse([cx-inner,cy-inner,cx+inner,cy+inner], fill=(18,24,42,255))
+              aw=int(S*.13); ash=int(S*.20); hw=int(S*.26); ht=int(S*.15)
+              lh=int(S*.04); lw=int(S*.30); gap=int(S*.04)
+              ac=(100,180,255)
+              sx=cx-aw//2; sy=cy-ash//2-ht//2
+              d.rectangle([sx,sy,sx+aw,sy+ash], fill=ac)
+              tip_y=sy+ash+ht; mid_y=sy+ash
+              d.polygon([(cx,tip_y),(cx-hw//2,mid_y),(cx+hw//2,mid_y)], fill=ac)
+              ly=tip_y+gap
+              d.rounded_rectangle([cx-lw//2,ly,cx+lw//2,ly+lh], radius=lh//2, fill=ac)
+              dr=int(S*.06); dx=int(S*.72); dy=int(S*.18)
+              d.ellipse([dx-dr,dy-dr,dx+dr,dy+dr], fill=(255,90,90))
+              return img
+
+          os.makedirs("assets/icon.iconset", exist_ok=True)
+          spec = [(16,'16x16'),(32,'16x16@2x'),(32,'32x32'),(64,'32x32@2x'),
+                  (128,'128x128'),(256,'128x128@2x'),(256,'256x256'),
+                  (512,'256x256@2x'),(512,'512x512'),(1024,'512x512@2x')]
+          for sz, name in spec:
+              make_icon(max(sz,64)).resize((sz,sz), Image.LANCZOS).save(
+                  f"assets/icon.iconset/icon_{name}.png")
+          os.system("iconutil -c icns assets/icon.iconset -o assets/icon.icns")
+          print("icns 生成完毕")
+          PYEOF
 
       - name: 打包 APP
         run: |
@@ -27,21 +70,19 @@ jobs:
             --onefile \
             --windowed \
             --name "allrss下载器" \
+            --icon assets/icon.icns \
             --collect-all customtkinter \
             --collect-all yt_dlp \
             gui_app.py
 
       - name: 压缩
-        run: |
-          cd dist
-          zip -r allrss-Mac.zip "allrss下载器.app"
+        run: cd dist && zip -r allrss-Mac.zip "allrss下载器.app"
 
       - uses: actions/upload-artifact@v4
         with:
           name: mac-app
           path: dist/allrss-Mac.zip
 
-  # ── Windows 版 ──────────────────────────────────────
   build-win:
     runs-on: windows-latest
     steps:
@@ -52,8 +93,40 @@ jobs:
           python-version: "3.11"
 
       - name: 安装依赖
+        run: pip install pyinstaller customtkinter feedparser requests yt-dlp pillow
+
+      - name: 生成图标 (.ico)
+        shell: python
         run: |
-          pip install pyinstaller customtkinter feedparser requests yt-dlp
+          from PIL import Image, ImageDraw
+          import os
+          def make_icon(size=512):
+              S=size; img=Image.new("RGBA",(S,S),(0,0,0,0)); d=ImageDraw.Draw(img)
+              pad,r=int(S*.04),int(S*.22)
+              d.rounded_rectangle([pad,pad,S-pad,S-pad],radius=r,fill=(18,24,42))
+              cx,cy=S//2,S//2
+              for i in range(18,0,-1):
+                  fr=i/18; ring=int(S*.36); inner=ring-int(S*.055)
+                  rc=int(60+(79-60)*(1-fr)); gc=int(80+(130-80)*(1-fr)); bc=int(220+(247-220)*(1-fr))
+                  d.ellipse([cx-ring,cy-ring,cx+ring,cy+ring],fill=(rc,gc,bc,255))
+                  d.ellipse([cx-inner,cy-inner,cx+inner,cy+inner],fill=(18,24,42,255))
+              aw=int(S*.13); ash=int(S*.20); hw=int(S*.26); ht=int(S*.15)
+              lh=int(S*.04); lw=int(S*.30); gap=int(S*.04); ac=(100,180,255)
+              sx=cx-aw//2; sy=cy-ash//2-ht//2
+              d.rectangle([sx,sy,sx+aw,sy+ash],fill=ac)
+              tip_y=sy+ash+ht; mid_y=sy+ash
+              d.polygon([(cx,tip_y),(cx-hw//2,mid_y),(cx+hw//2,mid_y)],fill=ac)
+              ly=tip_y+gap
+              d.rounded_rectangle([cx-lw//2,ly,cx+lw//2,ly+lh],radius=lh//2,fill=ac)
+              dr=int(S*.06); dx=int(S*.72); dy=int(S*.18)
+              d.ellipse([dx-dr,dy-dr,dx+dr,dy+dr],fill=(255,90,90))
+              return img
+          os.makedirs("assets", exist_ok=True)
+          sizes=[16,32,48,64,128,256]
+          frames=[make_icon(max(s,64)).resize((s,s),Image.LANCZOS) for s in sizes]
+          frames[0].save("assets/icon.ico",format="ICO",
+                         sizes=[(s,s) for s in sizes],append_images=frames[1:])
+          print("ico 生成完毕")
 
       - name: 打包 EXE
         run: |
@@ -61,6 +134,7 @@ jobs:
             --onefile `
             --windowed `
             --name "allrss下载器" `
+            --icon assets\icon.ico `
             --collect-all customtkinter `
             --collect-all yt_dlp `
             gui_app.py
@@ -70,7 +144,6 @@ jobs:
           name: win-app
           path: dist/allrss下载器.exe
 
-  # ── 发布 Release ────────────────────────────────────
   release:
     needs: [build-mac, build-win]
     runs-on: ubuntu-latest
@@ -79,20 +152,20 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
 
-      - name: 发布到 Releases
+      - name: 发布 Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: "v1.0.${{ github.run_number }}"
           name: "allrss 下载器"
           body: |
-            ## 下载说明
+            ## 下载
 
-            | 系统 | 文件 |
-            |------|------|
-            | Mac  | `allrss-Mac.zip` → 解压后双击 .app |
-            | Windows | `allrss下载器.exe` → 直接双击 |
+            | 系统 | 文件 | 说明 |
+            |------|------|------|
+            | Windows | `allrss下载器.exe` | 双击直接运行 |
+            | Mac | `allrss-Mac.zip` | 解压后双击 .app |
 
-            > Mac 首次打开：右键 → 打开（绕过安全提示）
+            > Mac 首次打开：右键 → 打开（跳过安全提示）
           files: |
             mac-app/allrss-Mac.zip
             win-app/allrss下载器.exe
