@@ -19,47 +19,44 @@ jobs:
       - name: 安装依赖
         run: pip install pyinstaller customtkinter feedparser requests yt-dlp pillow
 
-      - name: 生成图标 (.icns)
+      - name: 生成 .icns
         run: |
-          python3 << 'PYEOF'
-          from PIL import Image
-          import os, struct, zlib
+          python3 - << 'PYEOF'
+          from PIL import Image, ImageDraw
+          import os
 
-          def make_icon(size=512):
-              from PIL import Image, ImageDraw
+          def make_frame(size):
               S = size
               img = Image.new("RGBA", (S, S), (0,0,0,0))
-              d   = ImageDraw.Draw(img)
-              pad, r = int(S*.04), int(S*.22)
+              d = ImageDraw.Draw(img)
+              pad=max(int(S*.04),1); r=max(int(S*.22),1)
               d.rounded_rectangle([pad,pad,S-pad,S-pad], radius=r, fill=(18,24,42))
-              cx, cy = S//2, S//2
+              cx,cy=S//2,S//2
               for i in range(18,0,-1):
-                  fr = i/18
-                  ring  = int(S*.36)
-                  inner = ring - int(S*.055)
+                  fr=i/18; ring=max(int(S*.36),2); inner=max(ring-int(S*.055),1)
                   rc=int(60+(79-60)*(1-fr)); gc=int(80+(130-80)*(1-fr)); bc=int(220+(247-220)*(1-fr))
-                  d.ellipse([cx-ring,cy-ring,cx+ring,cy+ring], fill=(rc,gc,bc,255))
-                  d.ellipse([cx-inner,cy-inner,cx+inner,cy+inner], fill=(18,24,42,255))
-              aw=int(S*.13); ash=int(S*.20); hw=int(S*.26); ht=int(S*.15)
-              lh=int(S*.04); lw=int(S*.30); gap=int(S*.04)
-              ac=(100,180,255)
-              sx=cx-aw//2; sy=cy-ash//2-ht//2
-              d.rectangle([sx,sy,sx+aw,sy+ash], fill=ac)
-              tip_y=sy+ash+ht; mid_y=sy+ash
-              d.polygon([(cx,tip_y),(cx-hw//2,mid_y),(cx+hw//2,mid_y)], fill=ac)
-              ly=tip_y+gap
-              d.rounded_rectangle([cx-lw//2,ly,cx+lw//2,ly+lh], radius=lh//2, fill=ac)
-              dr=int(S*.06); dx=int(S*.72); dy=int(S*.18)
-              d.ellipse([dx-dr,dy-dr,dx+dr,dy+dr], fill=(255,90,90))
+                  d.ellipse([cx-ring,cy-ring,cx+ring,cy+ring],fill=(rc,gc,bc))
+                  d.ellipse([cx-inner,cy-inner,cx+inner,cy+inner],fill=(18,24,42))
+              aw=max(int(S*.13),2); ash=max(int(S*.18),2)
+              hw=max(int(S*.26),2); ht=max(int(S*.14),2)
+              lh=max(int(S*.04),1); lw=max(int(S*.30),2); gap=max(int(S*.03),1); ac=(100,180,255)
+              sx=cx-aw//2; sy=cy-(ash+ht)//2
+              d.rectangle([sx,sy,sx+aw,sy+ash],fill=ac)
+              ty=sy+ash+ht
+              d.polygon([(cx,ty),(cx-hw//2,sy+ash),(cx+hw//2,sy+ash)],fill=ac)
+              ly=ty+gap
+              d.rounded_rectangle([cx-lw//2,ly,cx+lw//2,ly+lh],radius=lh//2,fill=ac)
+              dr=max(int(S*.06),1); dx=max(int(S*.72),1); dy=max(int(S*.18),1)
+              d.ellipse([dx-dr,dy-dr,dx+dr,dy+dr],fill=(255,90,90))
               return img
 
           os.makedirs("assets/icon.iconset", exist_ok=True)
-          spec = [(16,'16x16'),(32,'16x16@2x'),(32,'32x32'),(64,'32x32@2x'),
-                  (128,'128x128'),(256,'128x128@2x'),(256,'256x256'),
-                  (512,'256x256@2x'),(512,'512x512'),(1024,'512x512@2x')]
-          for sz, name in spec:
-              make_icon(max(sz,64)).resize((sz,sz), Image.LANCZOS).save(
-                  f"assets/icon.iconset/icon_{name}.png")
+          spec=[(16,'16x16'),(32,'16x16@2x'),(32,'32x32'),(64,'32x32@2x'),
+                (128,'128x128'),(256,'128x128@2x'),(256,'256x256'),
+                (512,'256x256@2x'),(512,'512x512'),(1024,'512x512@2x')]
+          master = make_frame(1024)
+          for sz,name in spec:
+              master.resize((sz,sz),Image.LANCZOS).save(f"assets/icon.iconset/icon_{name}.png")
           os.system("iconutil -c icns assets/icon.iconset -o assets/icon.icns")
           print("icns 生成完毕")
           PYEOF
@@ -93,40 +90,7 @@ jobs:
           python-version: "3.11"
 
       - name: 安装依赖
-        run: pip install pyinstaller customtkinter feedparser requests yt-dlp pillow
-
-      - name: 生成图标 (.ico)
-        shell: python
-        run: |
-          from PIL import Image, ImageDraw
-          import os
-          def make_icon(size=512):
-              S=size; img=Image.new("RGBA",(S,S),(0,0,0,0)); d=ImageDraw.Draw(img)
-              pad,r=int(S*.04),int(S*.22)
-              d.rounded_rectangle([pad,pad,S-pad,S-pad],radius=r,fill=(18,24,42))
-              cx,cy=S//2,S//2
-              for i in range(18,0,-1):
-                  fr=i/18; ring=int(S*.36); inner=ring-int(S*.055)
-                  rc=int(60+(79-60)*(1-fr)); gc=int(80+(130-80)*(1-fr)); bc=int(220+(247-220)*(1-fr))
-                  d.ellipse([cx-ring,cy-ring,cx+ring,cy+ring],fill=(rc,gc,bc,255))
-                  d.ellipse([cx-inner,cy-inner,cx+inner,cy+inner],fill=(18,24,42,255))
-              aw=int(S*.13); ash=int(S*.20); hw=int(S*.26); ht=int(S*.15)
-              lh=int(S*.04); lw=int(S*.30); gap=int(S*.04); ac=(100,180,255)
-              sx=cx-aw//2; sy=cy-ash//2-ht//2
-              d.rectangle([sx,sy,sx+aw,sy+ash],fill=ac)
-              tip_y=sy+ash+ht; mid_y=sy+ash
-              d.polygon([(cx,tip_y),(cx-hw//2,mid_y),(cx+hw//2,mid_y)],fill=ac)
-              ly=tip_y+gap
-              d.rounded_rectangle([cx-lw//2,ly,cx+lw//2,ly+lh],radius=lh//2,fill=ac)
-              dr=int(S*.06); dx=int(S*.72); dy=int(S*.18)
-              d.ellipse([dx-dr,dy-dr,dx+dr,dy+dr],fill=(255,90,90))
-              return img
-          os.makedirs("assets", exist_ok=True)
-          sizes=[16,32,48,64,128,256]
-          frames=[make_icon(max(s,64)).resize((s,s),Image.LANCZOS) for s in sizes]
-          frames[0].save("assets/icon.ico",format="ICO",
-                         sizes=[(s,s) for s in sizes],append_images=frames[1:])
-          print("ico 生成完毕")
+        run: pip install pyinstaller customtkinter feedparser requests yt-dlp
 
       - name: 打包 EXE
         run: |
