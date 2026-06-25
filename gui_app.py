@@ -47,69 +47,67 @@ def get_channels():
             result.append({"title": e.get("title",""), "url": url})
     return result
 
-# 图片/缩略图特征，用于过滤
-_IMAGE_SKIP = ("timthumb", ".jpg", ".jpeg", ".png", ".gif",
-               ".webp", ".bmp", ".svg", "image/", "/thumb",
-               "/poster", "/cover", "thumbnail")
-_VIDEO_EXTS = (".m3u8", ".mp4", ".mkv", ".ts", ".avi",
-               ".flv", ".wmv", ".mov", ".webm", ".3gp")
-_SKIP_MIME  = ("rss", "xml", "html", "text/plain", "image/")
-
-def _is_image_url(url):
-    u = url.lower()
-    return any(p in u for p in _IMAGE_SKIP)
+_VIDEO_EXTS = (".m3u8", ".mp4", ".mkv", ".ts", ".avi", ".flv", ".wmv", ".mov", ".webm", ".3gp")
+_RSS_MIME   = ("application/rss+xml", "text/xml", "application/xml", "application/atom+xml")
+# 只过滤最确定的缩略图工具，不过度过滤
+_THUMB_SKIP = ("timthumb.php",)
 
 def _extract_video_url(entry):
     """
-    三步提取视频 URL：
-    1. enclosures/links 里找直接视频链接（过滤图片）
-    2. HTML 内容里找 source src / href（不搜 img src）
-    3. 都没有时用 entry.link 让 yt-dlp 自己从页面提取
+    提取视频 URL，同时把 entry 完整内容写入 DEBUG log，方便排查。
+    优先级：enclosure/link 直接视频 → HTML 内所有 URL → entry.link
     """
-    all_links = list(entry.get("links", [])) + list(entry.get("enclosures", []))
+    title = entry.get("title","?")
 
-    # ── 步骤 1：enclosures / links ─────────────────────
-    for link in all_links:
-        href = (link.get("href") or link.get("url") or "").strip()
-        mime = link.get("type", "").lower()
-        if not href or _is_image_url(href): continue
-        if any(t in mime for t in _SKIP_MIME): continue
+    # ── 完整 DEBUG dump（每次都记录，便于分析 RSS 结构）──
+    log.debug("=== entry: %s", title)
+    log.debug("  .link = %s", entry.get("link",""))
+    log.debug("  .id   = %s", entry.get("id",""))
+    for i, l in enumerate(entry.get("links",[])):
+        log.debug("  links[%d] type=%s href=%s", i,
+                  l.get("type",""), (l.get("href") or l.get("url",""))[:120])
+    for i, e2 in enumerate(entry.get("enclosures",[])):
+        log.debug("  enclosure[%d] type=%s url=%s", i,
+                  e2.get("type",""), (e2.get("href") or e2.get("url",""))[:120])
+    raw_summary = entry.get("summary","")
+    log.debug("  summary[:400] = %s", raw_summary[:400])
+
+    # ── 步骤 1：enclosures / links 里找直接视频 ──────────
+    all_links = list(entry.get("links",[])) + list(entry.get("enclosures",[]))
+    for lk in all_links:
+        href = (lk.get("href") or lk.get("url") or "").strip()
+        mime = lk.get("type","").lower()
+        if not href: continue
+        if mime in _RSS_MIME: continue           # 跳过 RSS 订阅链接
+        if "rss" in mime or "xml" in mime: continue
         if any(href.lower().endswith(x) for x in _VIDEO_EXTS):
-            log.debug("video_url from ext: %s", href[:100]); return href
+            log.debug("  → ext match: %s", href[:100]); return href
         if "video" in mime or "mpegurl" in mime or "octet" in mime:
-            log.debug("video_url from mime: %s", href[:100]); return href
+            log.debug("  → mime match: %s", href[:100]); return href
 
-    # ── 步骤 2：HTML 里找 source src / href（不抓 img src）──
-    raw = entry.get("summary","") + "".join(
-        c.get("value","") for c in entry.get("content",[]))
+    # ── 步骤 2：HTML 内找所有 http URL，过滤缩略图 ────────
+    import re
+    raw = raw_summary + "".join(c.get("value","") for c in entry.get("content",[]))
+    all_urls = re.findall(r"https?://[^\x00- \"'<>]+", raw)
+    log.debug("  HTML URLs: %s", all_urls[:8])
 
-    # 仅搜视频相关属性，明确跳过 <img src=
-    for kw in ['source src="', "source src='",
-               'file="', "file='",
-               'href="', "href='"]:
-        pos = 0
-        while True:
-            idx = raw.find(kw, pos)
-            if idx == -1: break
-            start = idx + len(kw)
-            q = kw[-1]
-            end = raw.find(q, start)
-            if end > start:
-                u = raw[start:end].strip()
-                if (u.startswith("http")
-                        and not u.lower().endswith((".xml",".rss",".atom"))
-                        and not _is_image_url(u)):
-                    log.debug("video_url from HTML(%s): %s", kw.strip(), u[:100])
-                    return u
-            pos = start
+    # 优先返回有视频扩展名的
+    for u in all_urls:
+        if any(u.lower().split("?")[0].endswith(x) for x in _VIDEO_EXTS):
+            log.debug("  → HTML video ext: %s", u[:100]); return u
+    # 其次返回非缩略图的任意 URL
+    for u in all_urls:
+        if not any(t in u.lower() for t in _THUMB_SKIP):
+            if not any(u.lower().split("?")[0].endswith(x)
+                       for x in (".jpg",".jpeg",".png",".gif",".webp",".bmp")):
+                log.debug("  → HTML non-thumb: %s", u[:100]); return u
 
-    # ── 步骤 3：fallback → entry.link 给 yt-dlp 从页面解析 ──
-    page = (entry.get("link") or entry.get("id","")).strip()
-    if page and page.startswith("http") and not _is_image_url(page):
-        log.debug("video_url fallback to page: %s", page[:100])
-        return page
+    # ── 步骤 3：entry.link / id 兜底 ──────────────────────
+    page = entry.get("link","").strip() or entry.get("id","").strip()
+    if page.startswith("http"):
+        log.debug("  → fallback link: %s", page[:100]); return page
 
-    log.warning("video_url: 未找到任何候选 URL，entry title=%s", entry.get("title","?"))
+    log.warning("  → NO URL for: %s", title)
     return None
 
 def _extract_sub_rss(entry):
