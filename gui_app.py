@@ -293,8 +293,8 @@ class App(ctk.CTk):
         self.ep_btn_row.grid_remove()
         self._clear_mid("⏳  加载剧名…")
         self._log(f"\n加载「{channel['title']}」剧名…\n")
-        threading.Thread(target=lambda: self.after(
-            0, lambda: None) or self._fetch_shows(channel), daemon=True).start()
+        threading.Thread(target=self._fetch_shows,
+                         args=(channel,), daemon=True).start()
 
     def _fetch_shows(self, channel):
         shows = get_shows(channel["url"])
@@ -334,9 +334,8 @@ class App(ctk.CTk):
         self.ep_btn_row.grid()
         self._clear_mid("⏳  加载集数…")
         self._log(f"\n加载「{show['title']}」集数…\n")
-        threading.Thread(
-            target=lambda: self.after(0, lambda: None) or self._fetch_eps(show),
-            daemon=True).start()
+        threading.Thread(target=self._fetch_eps,
+                         args=(show,), daemon=True).start()
 
     def _fetch_eps(self, show):
         eps = get_episodes(show)
