@@ -11,11 +11,9 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
       - name: 安装依赖
         run: pip install pyinstaller customtkinter feedparser requests yt-dlp pillow
 
@@ -24,23 +22,19 @@ jobs:
           python3 - << 'PYEOF'
           from PIL import Image, ImageDraw
           import os
-
           def make_frame(size):
-              S = size
-              img = Image.new("RGBA", (S, S), (0,0,0,0))
-              d = ImageDraw.Draw(img)
+              S=size; img=Image.new("RGBA",(S,S),(0,0,0,0)); d=ImageDraw.Draw(img)
               pad=max(int(S*.04),1); r=max(int(S*.22),1)
-              d.rounded_rectangle([pad,pad,S-pad,S-pad], radius=r, fill=(18,24,42))
+              d.rounded_rectangle([pad,pad,S-pad,S-pad],radius=r,fill=(18,24,42))
               cx,cy=S//2,S//2
               for i in range(18,0,-1):
                   fr=i/18; ring=max(int(S*.36),2); inner=max(ring-int(S*.055),1)
                   rc=int(60+(79-60)*(1-fr)); gc=int(80+(130-80)*(1-fr)); bc=int(220+(247-220)*(1-fr))
                   d.ellipse([cx-ring,cy-ring,cx+ring,cy+ring],fill=(rc,gc,bc))
                   d.ellipse([cx-inner,cy-inner,cx+inner,cy+inner],fill=(18,24,42))
-              aw=max(int(S*.13),2); ash=max(int(S*.18),2)
-              hw=max(int(S*.26),2); ht=max(int(S*.14),2)
-              lh=max(int(S*.04),1); lw=max(int(S*.30),2); gap=max(int(S*.03),1); ac=(100,180,255)
-              sx=cx-aw//2; sy=cy-(ash+ht)//2
+              aw=max(int(S*.13),2); ash=max(int(S*.18),2); hw=max(int(S*.26),2)
+              ht=max(int(S*.14),2); lh=max(int(S*.04),1); lw=max(int(S*.30),2)
+              gap=max(int(S*.03),1); ac=(100,180,255); sx=cx-aw//2; sy=cy-(ash+ht)//2
               d.rectangle([sx,sy,sx+aw,sy+ash],fill=ac)
               ty=sy+ash+ht
               d.polygon([(cx,ty),(cx-hw//2,sy+ash),(cx+hw//2,sy+ash)],fill=ac)
@@ -49,16 +43,15 @@ jobs:
               dr=max(int(S*.06),1); dx=max(int(S*.72),1); dy=max(int(S*.18),1)
               d.ellipse([dx-dr,dy-dr,dx+dr,dy+dr],fill=(255,90,90))
               return img
-
-          os.makedirs("assets/icon.iconset", exist_ok=True)
+          os.makedirs("assets/icon.iconset",exist_ok=True)
           spec=[(16,'16x16'),(32,'16x16@2x'),(32,'32x32'),(64,'32x32@2x'),
                 (128,'128x128'),(256,'128x128@2x'),(256,'256x256'),
                 (512,'256x256@2x'),(512,'512x512'),(1024,'512x512@2x')]
-          master = make_frame(1024)
+          master=make_frame(1024)
           for sz,name in spec:
               master.resize((sz,sz),Image.LANCZOS).save(f"assets/icon.iconset/icon_{name}.png")
           os.system("iconutil -c icns assets/icon.iconset -o assets/icon.icns")
-          print("icns 生成完毕")
+          print("icns done")
           PYEOF
 
       - name: 打包 APP
@@ -71,10 +64,8 @@ jobs:
             --collect-all customtkinter \
             --collect-all yt_dlp \
             gui_app.py
-
       - name: 压缩
         run: cd dist && zip -r allrss-Mac.zip "allrss下载器.app"
-
       - uses: actions/upload-artifact@v4
         with:
           name: mac-app
@@ -84,29 +75,33 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
       - name: 安装依赖
         run: pip install pyinstaller customtkinter feedparser requests yt-dlp
 
-      - name: 打包 EXE
+      - name: 打包（文件夹模式，避免误报）
         run: |
           pyinstaller `
-            --onefile `
+            --onedir `
             --windowed `
             --name "allrss下载器" `
             --icon assets\icon.ico `
             --collect-all customtkinter `
             --collect-all yt_dlp `
+            --noupx `
             gui_app.py
+
+      - name: 压缩为 zip
+        run: |
+          cd dist
+          powershell Compress-Archive -Path "allrss下载器" -DestinationPath "allrss-Win.zip"
 
       - uses: actions/upload-artifact@v4
         with:
           name: win-app
-          path: dist/allrss下载器.exe
+          path: dist/allrss-Win.zip
 
   release:
     needs: [build-mac, build-win]
@@ -115,7 +110,6 @@ jobs:
       contents: write
     steps:
       - uses: actions/download-artifact@v4
-
       - name: 发布 Release
         uses: softprops/action-gh-release@v2
         with:
@@ -126,12 +120,14 @@ jobs:
 
             | 系统 | 文件 | 说明 |
             |------|------|------|
-            | Windows | `allrss下载器.exe` | 双击直接运行 |
-            | Mac | `allrss-Mac.zip` | 解压后双击 .app |
+            | Windows | `allrss-Win.zip` | 解压 → 双击里面的 allrss下载器.exe |
+            | Mac | `allrss-Mac.zip` | 解压 → 双击 .app |
 
-            > Mac 首次打开：右键 → 打开（跳过安全提示）
+            > **Windows 杀毒误报处理**：解压后右键 allrss下载器.exe → 属性 → 底部勾选"解除锁定"→ 确定
+            >
+            > **Mac 首次打开**：右键 → 打开（跳过安全提示）
           files: |
             mac-app/allrss-Mac.zip
-            win-app/allrss下载器.exe
+            win-app/allrss-Win.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
