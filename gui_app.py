@@ -8,6 +8,7 @@ from tkinter import filedialog, messagebox
 import tkinter as tk
 import customtkinter as ctk
 import feedparser, requests, yt_dlp
+from bs4 import BeautifulSoup
 
 # ── 日志文件（exe 同目录下的 allrss_debug.log）──────────────
 _log_path = (Path(sys.executable).parent / "allrss_debug.log"
@@ -177,6 +178,41 @@ def resolve_episode_url(ep):
             log.debug("  → %s", url[:100]); return url
     log.warning("resolve: 未找到视频 %s", ep_rss); return None
 
+def extract_from_drive_page(page_url):
+    """从 drive.allrss.se 页面提取真实视频 URL"""
+    try:
+        log.debug("extract_from_drive_page: %s", page_url[:100])
+        r = requests.get(page_url, headers=HEADERS, timeout=10)
+        soup = BeautifulSoup(r.text, "lxml")
+        
+        # 方法 1：<video><source src="...">
+        for video in soup.find_all("video"):
+            for source in video.find_all("source"):
+                url = source.get("src","").strip()
+                if url and url.startswith("http"):
+                    log.debug("  found video source: %s", url[:100]); return url
+        
+        # 方法 2：<source src="...">
+        for source in soup.find_all("source"):
+            url = source.get("src","").strip()
+            if url and url.startswith("http"):
+                log.debug("  found source: %s", url[:100]); return url
+        
+        # 方法 3：JS 变量里的 URL
+        import re
+        text = r.text
+        # 找 m3u8 或 mp4 URL
+        for pat in ["https?://[^\s\"\'<>]+\.m3u8[^\s\"\'<>]*",
+                    "https?://[^\s\"\'<>]+\.mp4[^\s\"\'<>]*"]:
+            for url in re.findall(pat, text):
+                log.debug("  found JS URL: %s", url[:100]); return url
+        
+        log.warning("extract_from_drive_page: 未找到视频 URL")
+        return None
+    except Exception as e:
+        log.error("extract_from_drive_page: %s", e)
+        return None
+
 def download_video(url, save_path, log_fn):
     """下载单个视频，输出详细日志"""
     log_fn(f"    链接：{url[:80]}\n")
@@ -203,14 +239,29 @@ def download_video(url, save_path, log_fn):
         "socket_timeout":     30,
         "http_headers":       HEADERS,
     }
+    
+    # 首先尝试 yt-dlp
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             ydl.download([url])
         return True
-    except yt_dlp.utils.DownloadError as e:
-        log_fn(f"  ✗ 下载失败：{e}\n")
     except Exception as e:
-        log_fn(f"  ✗ 错误：{type(e).__name__}: {e}\n")
+        log_fn(f"  ⚠ yt-dlp 失败：{str(e)[:100]}\n")
+        
+        # 备选：如果是 v.allrss.se 播放页面，尝试从页面提取 URL
+        if "v.allrss.se" in url and "xml=1" in url:
+            log_fn("    尝试从页面提取视频…\n")
+            video_url = extract_from_drive_page(url)
+            if video_url:
+                log_fn(f"    提取到：{video_url[:80]}\n")
+                log_fn("    重新下载…\n")
+                try:
+                    with yt_dlp.YoutubeDL(opts) as ydl:
+                        ydl.download([video_url])
+                    return True
+                except Exception as e2:
+                    log_fn(f"  ✗ 提取后仍失败：{str(e2)[:100]}\n")
+    
     return False
 
 # ── 主界面 ──────────────────────────────────────────────
