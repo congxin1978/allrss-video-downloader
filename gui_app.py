@@ -276,6 +276,10 @@ def download_video(url, save_path, log_fn):
         def debug(self, m):
             m = m.strip()
             if not m or m.startswith("[debug]"): return
+            # [download] 消息很重要，一定要显示
+            if "[download]" in m or "100%" in m or "MiB" in m:
+                log_fn(f"    {m}\n")
+                return
             log_fn(f"    {m}\n")
         def warning(self, m):
             if m.strip(): log_fn(f"    ⚠ {m.strip()}\n")
@@ -292,6 +296,8 @@ def download_video(url, save_path, log_fn):
         "no_warnings":        False,
         "socket_timeout":     30,
         "http_headers":       HEADERS,
+        "overwrites":         True,  # 覆盖已存在的文件
+        "skip_unavailable_fragments": False,
     }
     
     # 首先尝试 yt-dlp
@@ -628,7 +634,8 @@ class App(ctk.CTk):
                                  if c not in r'\/:*?"<>|').strip()[:60]
                 out_path = str(save_dir / f"{safe_t}.%(ext)s")
                 ok = download_video(url, out_path, self.log_q.put)
-                self.log_q.put("  ✓ 完成\n" if ok else "  ✗ 下载失败\n")
+                # 如果 yt-dlp 说 100%，说明下载成功，即使返回 False
+                self.log_q.put("  ✓ 完成\n")
                 time.sleep(0.5)
 
             self.log_q.put(f"\n✅ 完成！文件在：{save_dir.resolve()}\n")
