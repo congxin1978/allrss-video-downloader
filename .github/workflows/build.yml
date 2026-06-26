@@ -15,7 +15,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: 安装依赖
-        run: pip install pyinstaller customtkinter feedparser requests yt-dlp pillow
+        run: pip install pyinstaller customtkinter feedparser requests yt-dlp pillow beautifulsoup4 lxml
 
       - name: 生成 .icns
         run: |
@@ -63,6 +63,8 @@ jobs:
             --icon assets/icon.icns \
             --collect-all customtkinter \
             --collect-all yt_dlp \
+            --collect-all bs4 \
+            --collect-all lxml \
             gui_app.py
       - name: 压缩
         run: cd dist && zip -r allrss-Mac.zip "allrss下载器.app"
@@ -79,7 +81,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: 安装依赖
-        run: pip install pyinstaller customtkinter feedparser requests yt-dlp
+        run: pip install pyinstaller customtkinter feedparser requests yt-dlp beautifulsoup4 lxml
 
       - name: 打包（文件夹模式，避免误报）
         run: |
@@ -90,6 +92,8 @@ jobs:
             --icon assets\icon.ico `
             --collect-all customtkinter `
             --collect-all yt_dlp `
+            --collect-all bs4 `
+            --collect-all lxml `
             --noupx `
             gui_app.py
 
