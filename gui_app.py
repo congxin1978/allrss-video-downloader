@@ -10,6 +10,27 @@ import customtkinter as ctk
 import feedparser, requests, yt_dlp, subprocess
 from bs4 import BeautifulSoup
 
+# ── FFmpeg 路径：优先用打包在 app 内的，其次用系统的 ──────────────
+def _find_ffmpeg():
+    """找到 ffmpeg 可执行文件路径"""
+    # PyInstaller 打包后，同目录下的文件在 sys._MEIPASS 或 exe 旁边
+    if getattr(sys, "frozen", False):
+        base = Path(sys.executable).parent
+        bundled = base / "ffmpeg.exe"
+        if bundled.exists():
+            log.debug("ffmpeg: 使用内置版本 %s", bundled)
+            return str(bundled)
+    # 回退到系统 PATH
+    import shutil
+    found = shutil.which("ffmpeg")
+    if found:
+        log.debug("ffmpeg: 使用系统版本 %s", found)
+        return found
+    log.warning("ffmpeg: 未找到")
+    return "ffmpeg"   # 让系统自己找，找不到会报 FileNotFoundError
+
+FFMPEG_BIN = _find_ffmpeg()
+
 # ── 日志文件（exe 同目录下的 allrss_debug.log）──────────────
 _log_path = (Path(sys.executable).parent / "allrss_debug.log"
              if getattr(sys, "frozen", False)
@@ -271,7 +292,7 @@ def remux_to_iphone_compatible(mp4_file, log_fn):
         log_fn(f"    优化容器格式（iPhone 兼容）…\n")
         
         cmd = [
-            "ffmpeg", "-i", mp4_file,
+            FFMPEG_BIN, "-i", mp4_file,
             "-c:v", "copy",           # 视频不转码
             "-c:a", "aac",            # 音频转 AAC
             "-c:s", "mov_text",       # 字幕转 MOV
