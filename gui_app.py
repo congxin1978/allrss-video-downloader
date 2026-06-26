@@ -213,9 +213,63 @@ def extract_from_drive_page(page_url):
         log.error("extract_from_drive_page: %s", e)
         return None
 
+def check_m3u8_codecs(m3u8_url):
+    """
+    检查 m3u8 里的视频编码，优先选择 H.264（iPhone 兼容）
+    返回修改后的 URL，如果找到兼容版本
+    """
+    try:
+        log.debug("check_m3u8_codecs: %s", m3u8_url[:100])
+        r = requests.get(m3u8_url, headers=HEADERS, timeout=10)
+        lines = r.text.split("\n")
+        
+        h264_url = None  # H.264（兼容）
+        hevc_url = None  # H.265（不兼容 iPhone）
+        fallback_url = None
+        
+        for i, line in enumerate(lines):
+            if "CODEC" in line or "codec" in line:
+                log.debug("  codec line: %s", line[:100])
+                # 找 CODECS 属性，判断编码
+                if "avc1" in line.lower() or "h.264" in line.lower():
+                    h264_url = _extract_url_from_m3u8(lines, i)
+                    if h264_url: break
+                if "hev1" in line.lower() or "h.265" in line.lower() or "hevc" in line.lower():
+                    hevc_url = _extract_url_from_m3u8(lines, i)
+            
+            # 备选：直接找 URL 行
+            if line.startswith("http") and not fallback_url:
+                fallback_url = line
+        
+        # 优先级：H.264 > H.265 > fallback
+        chosen = h264_url or hevc_url or fallback_url
+        if chosen and chosen != m3u8_url:
+            log.debug("  → 选择: %s", chosen[:100])
+            return chosen
+        return m3u8_url
+    except Exception as e:
+        log.warning("check_m3u8_codecs: %s", e)
+        return m3u8_url
+
+def _extract_url_from_m3u8(lines, idx):
+    """从 m3u8 行附近提取 URL"""
+    for offset in range(idx, max(idx-5, -1), -1):
+        if offset >= 0 and lines[offset].startswith("http"):
+            return lines[offset].strip()
+    for offset in range(idx+1, min(idx+5, len(lines))):
+        if offset < len(lines) and lines[offset].startswith("http"):
+            return lines[offset].strip()
+    return None
+
 def download_video(url, save_path, log_fn):
     """下载单个视频，输出详细日志"""
     log_fn(f"    链接：{url[:80]}\n")
+    
+    # 如果是 m3u8，检查编码并选择兼容版本
+    if ".m3u8" in url.lower():
+        log_fn("    检查视频编码（iPhone 兼容性）…\n")
+        url = check_m3u8_codecs(url)
+    
     log_fn(f"    正在解析…\n")
 
     class YLogger:
