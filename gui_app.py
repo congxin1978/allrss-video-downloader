@@ -7,7 +7,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox
 import tkinter as tk
 import customtkinter as ctk
-import feedparser, requests, yt_dlp
+import feedparser, requests, yt_dlp, subprocess
 from bs4 import BeautifulSoup
 
 # ── 日志文件（exe 同目录下的 allrss_debug.log）──────────────
@@ -260,6 +260,45 @@ def _extract_url_from_m3u8(lines, idx):
         if offset < len(lines) and lines[offset].startswith("http"):
             return lines[offset].strip()
     return None
+
+def remux_to_iphone_compatible(mp4_file, log_fn):
+    """
+    用 ffmpeg remux（重新打包），不转码
+    H.265 → iPhone 兼容 MP4，几秒完成
+    """
+    try:
+        log.debug("remux: %s", mp4_file)
+        log_fn(f"    优化容器格式（iPhone 兼容）…\n")
+        
+        cmd = [
+            "ffmpeg", "-i", mp4_file,
+            "-c:v", "copy",           # 视频不转码
+            "-c:a", "aac",            # 音频转 AAC
+            "-c:s", "mov_text",       # 字幕转 MOV
+            "-movflags", "+faststart",
+            "-y", mp4_file + ".tmp.mp4"
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        if result.returncode == 0:
+            # 替换原文件
+            import shutil
+            shutil.move(mp4_file + ".tmp.mp4", mp4_file)
+            log_fn("    ✓ 容器优化完成\n")
+            log.debug("remux: success")
+            return True
+        else:
+            log_fn(f"    ⚠ 容器优化失败（保留原文件）\n")
+            log.warning("remux failed: %s", result.stderr[:200])
+            return False
+    except FileNotFoundError:
+        log_fn("    ⚠ ffmpeg 未安装，跳过优化\n")
+        log.warning("ffmpeg not found")
+        return False
+    except Exception as e:
+        log_fn(f"    ⚠ 优化出错：{e}\n")
+        log.error("remux error: %s", e)
+        return False
 
 def download_video(url, save_path, log_fn):
     """下载单个视频，输出详细日志"""
@@ -636,6 +675,12 @@ class App(ctk.CTk):
                 ok = download_video(url, out_path, self.log_q.put)
                 # 如果 yt-dlp 说 100%，说明下载成功，即使返回 False
                 self.log_q.put("  ✓ 完成\n")
+                
+                # 下载后自动 remux（iPhone 兼容）
+                mp4_file = str(save_dir / f"{safe_t}.mp4")
+                if Path(mp4_file).exists():
+                    remux_to_iphone_compatible(mp4_file, self.log_q.put)
+                
                 time.sleep(0.5)
 
             self.log_q.put(f"\n✅ 完成！文件在：{save_dir.resolve()}\n")
