@@ -72,12 +72,17 @@ def _extract_video_url(entry):
     raw_summary = entry.get("summary","")
     log.debug("  summary[:400] = %s", raw_summary[:400])
 
-    # ── 步骤 1：enclosures / links 里找直接视频 ──────────
+    # ── 步骤 1：enclosures / links 里找直接视频或播放器 ──
     all_links = list(entry.get("links",[])) + list(entry.get("enclosures",[]))
     for lk in all_links:
         href = (lk.get("href") or lk.get("url") or "").strip()
         mime = lk.get("type","").lower()
         if not href: continue
+        
+        # 关键：播放器 URL（v.allrss.se）即使 type=rss+xml 也要用
+        if "v.allrss.se" in href or "allupload" in href.lower():
+            log.debug("  → player URL: %s", href[:100]); return href
+        
         if mime in _RSS_MIME: continue           # 跳过 RSS 订阅链接
         if "rss" in mime or "xml" in mime: continue
         if any(href.lower().endswith(x) for x in _VIDEO_EXTS):
